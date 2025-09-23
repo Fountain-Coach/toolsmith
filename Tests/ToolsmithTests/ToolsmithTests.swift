@@ -20,7 +20,7 @@ final class ToolsmithTests: XCTestCase {
   func testRunLogsAndReturnsID() throws {
     let toolsmith = Toolsmith()
     let out = captureOutput {
-      _ = toolsmith.run(tool: "demo", metadata: ["k": "v"], operation: {})
+      _ = toolsmith.run(tool: "demo", metadata: ["k": "v"], operation: { _ in })
     }
     let data = out.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8)!
     let entry = try JSONDecoder().decode(LogEntry.self, from: data)
@@ -33,7 +33,7 @@ final class ToolsmithTests: XCTestCase {
     setenv("OTEL_EXPORT_URL", "http://example.com", 1)
     let toolsmith = Toolsmith()
     let out = captureOutput {
-      _ = toolsmith.run(tool: "demo", operation: {})
+      _ = toolsmith.run(tool: "demo", operation: { _ in })
     }
     unsetenv("OTEL_EXPORT_URL")
     let data = out.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8)!
