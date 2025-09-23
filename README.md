@@ -118,7 +118,9 @@ untrusted workloads in the same process.
 
 ## Documentation
 
-Full documentation is available in the [docs directory](docs/index.md).
+Full documentation is available in the [docs directory](docs/index.md). For
+details on publishing versioned VM images alongside source releases, see the
+[release process guide](docs/release-process.md).
 
 ---
 © 2025 Contexter alias Benedikt Eickhoff 🛡️ All rights reserved.
