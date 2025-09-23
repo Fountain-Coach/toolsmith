@@ -21,25 +21,40 @@ public struct ImageHydrator: Sendable {
     self.fileManager = fileManager
   }
 
-  public func ensureImageAvailable() async throws -> URL {
-    let manifestDirectory = manifestURL.deletingLastPathComponent()
-    let workspaceRoot: URL
-    if manifestDirectory.lastPathComponent == ".toolsmith" {
-      workspaceRoot = manifestDirectory.deletingLastPathComponent()
-    } else {
-      workspaceRoot = manifestDirectory
-    }
+  public var image: ToolManifest.Image { manifest.image }
 
-    let cacheDirectory =
-      workspaceRoot
+  public func cacheDirectory() -> URL {
+    workspaceRoot()
       .appendingPathComponent(".toolsmith", isDirectory: true)
       .appendingPathComponent("cache", isDirectory: true)
       .appendingPathComponent(manifest.image.name, isDirectory: true)
       .appendingPathComponent(manifest.image.qcow2_sha256, isDirectory: true)
+  }
+
+  public func cachedImageURL() -> URL {
+    cacheDirectory().appendingPathComponent(manifest.image.qcow2, isDirectory: false)
+  }
+
+  public func cachedImageIsValid() -> Bool {
+    let url = cachedImageURL()
+    guard fileManager.fileExists(atPath: url.path) else { return false }
+    do {
+      try manifest.verify(fileAt: url)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  public func sourceURL() throws -> URL {
+    try resolveSourceURL(relativeTo: manifestURL.deletingLastPathComponent())
+  }
+
+  public func ensureImageAvailable() async throws -> URL {
+    let cacheDirectory = cacheDirectory()
     try fileManager.createDirectory(
       at: cacheDirectory, withIntermediateDirectories: true, attributes: nil)
-    let cachedImageURL = cacheDirectory.appendingPathComponent(
-      manifest.image.qcow2, isDirectory: false)
+    let cachedImageURL = cachedImageURL()
 
     if fileManager.fileExists(atPath: cachedImageURL.path) {
       do {
@@ -50,7 +65,7 @@ public struct ImageHydrator: Sendable {
       }
     }
 
-    let sourceURL = try resolveSourceURL(relativeTo: manifestDirectory)
+    let sourceURL = try self.sourceURL()
     if sourceURL.isFileURL {
       try copyLocalImage(from: sourceURL, to: cachedImageURL)
     } else {
@@ -83,6 +98,14 @@ public struct ImageHydrator: Sendable {
         domain: "ImageHydrator", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Source image missing: \(source.path)"])
     }
+  }
+
+  private func workspaceRoot() -> URL {
+    let manifestDirectory = manifestURL.deletingLastPathComponent()
+    if manifestDirectory.lastPathComponent == ".toolsmith" {
+      return manifestDirectory.deletingLastPathComponent()
+    }
+    return manifestDirectory
   }
 
   private func downloadRemoteImage(from source: URL, to destination: URL) async throws {
