@@ -126,6 +126,76 @@ do {
 
 Use metadata to correlate runs across systems and logs.
 
+## VM execution model
+
+Toolsmith defaults to a VM-first posture. When the manifest exposes a
+virtual machine image, the runtime hydrates that artifact into
+`.toolsmith/cache/<image>/<version>` and validates the advertised
+SHA-256 digest before any command is dispatched. Cached images are
+reused until their digest diverges from the manifest, at which point the
+hydrator re-downloads the artifact.
+
+### Hydration lifecycle
+
+1. `Toolsmith.run` evaluates the manifest and resolves the execution
+   mode (automatic, host, or vm).
+2. If VM mode is selected, `ImageHydrator.ensureImageAvailable()`
+   downloads or reuses the cached image and verifies its digest.
+3. Successful verification triggers `VirtualMachine.start()` which boots
+   the VM and establishes a command channel endpoint.
+
+Lifecycle progress is emitted through `JSONLogger.lifecycle*` calls. For
+example:
+
+```json
+{"stage":"download_start","execution_mode":"vm","metadata":{"image_name":"ubuntu-22","cache_path":"/workspace/.toolsmith/cache/ubuntu-22/1.2.3"}}
+{"stage":"checksum_verified","execution_mode":"vm","metadata":{"digest":"abc123","image_path":"/workspace/.toolsmith/cache/ubuntu-22/1.2.3/ubuntu-22.qcow2"}}
+{"stage":"vm_boot","execution_mode":"vm","metadata":{"backend":"vm","host":"127.0.0.1","port":"9000"}}
+```
+
+If hydration fails (e.g. checksum mismatch or missing manifest), the
+logger emits a `download_end` entry with `status:"failed"` and VM mode
+falls back to host execution.
+
+### Command channel usage
+
+Once booted, `VirtualMachine.start()` returns a
+`CommandChannelAdapter`. The adapter exposes `connect()`,
+`runCommand(_:)`, and `requestShutdown()` APIs for interacting with the
+guest. Each `runCommand` call produces a stream of status updates
+(`started`, `stdout`, `stderr`, `finished`) to mirror the guest process
+lifecycle. The command channel is also where health probes or adapter
+extensions can be injected.
+
+### Optional write-through exports
+
+By default the VM sees the workspace mounted read-only. When a tool must
+export artifacts, provide writable mounts by passing `writableExports`
+into `VirtualMachine.start()`. Adapters under `Sources/Toolsmith/Adapters`
+contain helpers for defining the mount points and propagating them to
+`QemuRunner`.
+
+### Verification and troubleshooting
+
+* **Confirm VM mode** — Inspect lifecycle log entries for
+  `metadata.backend == "vm"` and observe the `execution_mode` field in
+  both lifecycle and final `LogEntry` metadata. When available, the
+  `cache_path` metadata should resolve to `.toolsmith/cache/...`.
+* **Command-channel probe** — Issue a lightweight invocation such as
+  `CommandChannelAdapter.CommandInvocation(executable: "/bin/true")` and
+  ensure `StatusUpdate.started` and `StatusUpdate.finished(0)` arrive.
+  Failure to receive updates typically indicates a stale connection.
+* **Digest mismatch** — Look for `download_end` entries with
+  `status:"failed"` and an accompanying `error` describing the mismatch.
+  Clearing the cache directory forces a fresh hydration.
+* **Adapter cross-reference** — When extending integrations, consult the
+  APIs documented in `Sources/Toolsmith/Adapters/CommandChannelAdapter.swift`
+  and `Sources/Toolsmith/Virtualization/VirtualMachine.swift` to align
+  guest-side changes with host orchestration.
+
+If issues persist, enable host execution via `TOOLSMITH_EXECUTION=host`
+to isolate whether failures are VM-specific before filing a bug.
+
 ## Tools Factory and Client Generation
 
 FountainToolsmith optionally integrates with a Tools Factory service.
