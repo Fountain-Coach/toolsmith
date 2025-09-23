@@ -70,6 +70,42 @@ print("Ran tool with request ID", requestID)
 
 See [docs/index.md](docs/index.md) for more examples.
 
+## VM-first execution model
+
+Toolsmith prefers to execute tools inside a managed virtual machine (VM)
+whenever a compatible image is available in the manifest. On the first
+run the image is hydrated into `.toolsmith/cache/<image>/<version>` and
+its SHA-256 digest is checked before the VM is booted. Subsequent runs
+reuse the cached image as long as the digest still matches the manifest.
+
+The VM exposes a command channel back to the host process for dispatching
+tool invocations, streaming status updates, and delivering shutdown
+signals. By default the workspace is mounted read-only; if a tool needs
+to export artifacts you can opt into writable mounts via the adapters in
+`Sources/Toolsmith/Adapters/`.
+
+### Overriding execution placement
+
+You can switch between host and VM execution without code changes by
+setting the `TOOLSMITH_EXECUTION` environment variable:
+
+```bash
+export TOOLSMITH_EXECUTION=host   # force host execution
+export TOOLSMITH_EXECUTION=vm     # force VM execution
+```
+
+Individual `Toolsmith.run` calls accept an `execution:` parameter so you
+can override placement per invocation:
+
+```swift
+try toolsmith.run(tool: "ffmpeg", execution: .host) { context in
+    // Runs on the host even if VM mode is enabled globally
+}
+```
+
+This override is useful when mixing trusted helper binaries with
+untrusted workloads in the same process.
+
 ## Package Modules
 
 | Module             | Description                                                      |
