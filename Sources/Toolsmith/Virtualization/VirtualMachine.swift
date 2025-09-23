@@ -2,6 +2,19 @@ import Foundation
 import SandboxRunner
 import ToolsmithSupport
 
+public protocol VirtualMachineManaging: AnyObject, Sendable {
+  @discardableResult
+  func start(writableExports: [QemuRunner.ExportMount]) async throws -> any CommandChannel
+  func shutdown() async
+}
+
+public extension VirtualMachineManaging {
+  @discardableResult
+  func start() async throws -> any CommandChannel {
+    try await start(writableExports: [])
+  }
+}
+
 public actor VirtualMachine {
   public struct CommandResult: Sendable {
     public let updates: [CommandChannelAdapter.StatusUpdate]
@@ -27,7 +40,7 @@ public actor VirtualMachine {
 
   @discardableResult
   public func start(writableExports: [QemuRunner.ExportMount] = []) async throws
-    -> CommandChannelAdapter
+    -> any CommandChannel
   {
     switch state {
     case .running(_, let channel):
@@ -62,6 +75,8 @@ public actor VirtualMachine {
     state = .stopped
   }
 }
+
+extension VirtualMachine: VirtualMachineManaging {}
 
 public enum VirtualMachineError: Error {
   case notStarted

@@ -18,7 +18,7 @@ public enum ExecutionMode: String {
 public struct ExecutionContext {
   public enum Backend {
     case host(HostRunner)
-    case virtualMachine(CommandChannelAdapter)
+    case virtualMachine(any CommandChannel)
   }
 
   public struct HostRunner {
@@ -77,20 +77,32 @@ public struct ExecutionContext {
 }
 
 public final class Toolsmith {
-  let logger = JSONLogger()
+  private let logger: JSONLogger
   public let manifest: ToolManifest?
   private let imageHydrator: ImageHydrator?
+  private let makeVirtualMachine: @Sendable (URL, ToolManifest?, URL) -> VirtualMachineManaging
 
-  public init(imageDirectory: URL = URL(fileURLWithPath: "."), session: URLSession = .shared) {
+  public init(
+    imageDirectory: URL = URL(fileURLWithPath: "."),
+    session: URLSession = .shared,
+    fileManager: FileManager = .default,
+    logger: JSONLogger = JSONLogger(),
+    makeVirtualMachine: @escaping @Sendable (URL, ToolManifest?, URL) -> VirtualMachineManaging = {
+      imageURL, manifest, workspace in
+      VirtualMachine(imageURL: imageURL, manifest: manifest, workspace: workspace)
+    }
+  ) {
+    self.logger = logger
     let manifestURL = imageDirectory.appendingPathComponent("tools.json")
     let manifest = try? ToolManifest.load(from: manifestURL)
     self.manifest = manifest
     if let manifest = manifest {
       self.imageHydrator = ImageHydrator(
-        manifest: manifest, manifestURL: manifestURL, session: session)
+        manifest: manifest, manifestURL: manifestURL, session: session, fileManager: fileManager)
     } else {
       self.imageHydrator = nil
     }
+    self.makeVirtualMachine = makeVirtualMachine
   }
 
   @discardableResult
@@ -191,7 +203,7 @@ public final class Toolsmith {
           requestID: requestID, executionMode: ExecutionMode.vm.rawValue, imageName: image.name,
           imageURL: imageURL, digest: image.qcow2_sha256)
         let workspace = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let machine = VirtualMachine(imageURL: imageURL, manifest: manifest, workspace: workspace)
+        let machine = makeVirtualMachine(imageURL, manifest, workspace)
         let channel = try waitForAsync { try await machine.start() }
         let channelMetadata: [String: String]
         switch channel.endpoint.transport {

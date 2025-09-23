@@ -5,28 +5,17 @@ import XCTest
 @testable import Toolsmith
 
 final class ToolsmithTests: XCTestCase {
-  func captureOutput(_ work: () -> Void) -> String {
-    let pipe = Pipe()
-    let fd = dup(STDOUT_FILENO)
-    dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-    work()
-    fflush(nil)
-    dup2(fd, STDOUT_FILENO)
-    pipe.fileHandleForWriting.closeFile()
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    return String(data: data, encoding: .utf8) ?? ""
-  }
-
   func testRunLogsAndReturnsID() throws {
     let toolsmith = Toolsmith()
     let out = captureOutput {
       _ = toolsmith.run(tool: "demo", metadata: ["k": "v"], operation: { _ in })
     }
-    let data = out.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8)!
-    let entry = try JSONDecoder().decode(LogEntry.self, from: data)
+    let (entry, lifecycle) = try decodeOutput(out)
     XCTAssertEqual(entry.tool, "demo")
     XCTAssertEqual(entry.metadata["k"], "v")
     XCTAssertGreaterThanOrEqual(entry.duration_ms, 0)
+    XCTAssertEqual(entry.metadata["execution_mode"], ExecutionMode.host.rawValue)
+    XCTAssertEqual(lifecycle.map { $0.stage }, ["command_dispatch"])
   }
 
   func testRunExportsSpanWhenEnvSet() throws {
@@ -36,8 +25,7 @@ final class ToolsmithTests: XCTestCase {
       _ = toolsmith.run(tool: "demo", operation: { _ in })
     }
     unsetenv("OTEL_EXPORT_URL")
-    let data = out.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8)!
-    let entry = try JSONDecoder().decode(LogEntry.self, from: data)
+    let (entry, _) = try decodeOutput(out)
     XCTAssertNotNil(entry.metadata["span_id"])
   }
 
@@ -88,5 +76,22 @@ final class ToolsmithTests: XCTestCase {
     let cachedURL = try await toolsmith.ensureVirtualMachineImage()
     XCTAssertEqual(cachedURL, expectedURL)
     XCTAssertEqual(try Data(contentsOf: cachedURL), imageData)
+  }
+
+  private func decodeOutput(_ output: String) throws -> (LogEntry, [LifecycleLogEntry]) {
+    let decoder = JSONDecoder()
+    let lines = output.split(whereSeparator: \.isNewline).map(String.init)
+    var lifecycle: [LifecycleLogEntry] = []
+    var logEntry: LogEntry?
+    for line in lines {
+      guard let data = line.data(using: .utf8) else { continue }
+      if let entry = try? decoder.decode(LifecycleLogEntry.self, from: data) {
+        lifecycle.append(entry)
+      } else if let entry = try? decoder.decode(LogEntry.self, from: data) {
+        logEntry = entry
+      }
+    }
+    let entry = try XCTUnwrap(logEntry)
+    return (entry, lifecycle)
   }
 }
