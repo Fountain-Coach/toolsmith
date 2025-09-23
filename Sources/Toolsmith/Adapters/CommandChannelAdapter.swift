@@ -1,6 +1,15 @@
 import Foundation
 import ToolsmithSupport
 
+public protocol CommandChannel: AnyObject, Sendable {
+  var endpoint: CommandChannelEndpoint { get }
+  func connect() async throws
+  func runCommand(
+    _ invocation: CommandChannelAdapter.CommandInvocation
+  ) -> AsyncThrowingStream<CommandChannelAdapter.StatusUpdate, Error>
+  func requestShutdown() async throws
+}
+
 public final class CommandChannelAdapter: @unchecked Sendable {
   public struct CommandInvocation: Sendable {
     public let identifier: String
@@ -64,3 +73,5 @@ public final class CommandChannelAdapter: @unchecked Sendable {
     connected = false
   }
 }
+
+extension CommandChannelAdapter: CommandChannel {}
