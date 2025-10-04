@@ -7,6 +7,10 @@ on:
         description: Path to QCOW2 to publish
         required: true
         default: dist/image.qcow2
+      artifact_name:
+        description: Optional name of a previously uploaded artifact containing the QCOW2
+        required: false
+        default: ""
       image_ref:
         description: Full GHCR ref (ghcr.io/OWNER/REPO:TAG)
         required: true
@@ -31,6 +35,13 @@ jobs:
       - name: Verify ORAS
         run: oras version
 
+      - name: Download QCOW2 artifact (optional)
+        if: ${{ inputs.artifact_name != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: dist
+
       - name: Login to GHCR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -44,8 +55,15 @@ jobs:
         run: |
           set -euo pipefail
           if [[ ! -f "$QCOW2_PATH" ]]; then
-            echo "QCOW2 not found at $QCOW2_PATH" >&2
-            exit 1
+            echo "QCOW2 not found at $QCOW2_PATH; attempting to locate in dist/" >&2
+            alt=$(find dist -type f -name '*.qcow2' | head -n1 || true)
+            if [[ -n "${alt:-}" && -f "$alt" ]]; then
+              echo "Found QCOW2 at $alt"
+              QCOW2_PATH="$alt"
+            else
+              echo "No QCOW2 found; ensure inputs.qcow2_path or inputs.artifact_name is set correctly" >&2
+              exit 1
+            fi
           fi
           echo "Computing SHA256 of $QCOW2_PATH"
           ORIG_SHA=$(sha256sum "$QCOW2_PATH" | awk '{print $1}')
