@@ -6,7 +6,7 @@ on:
       image_tag:
         description: Tag to use for GHCR image (suffix only)
         required: false
-        default: ci-${{ github.run_id }}
+        default: ci
   push:
     branches:
       - ci/build-now/**
