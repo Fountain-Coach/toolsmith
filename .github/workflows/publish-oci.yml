@@ -15,6 +15,23 @@ on:
         description: Full GHCR ref (ghcr.io/OWNER/REPO:TAG)
         required: true
         default: ghcr.io/${{ github.repository }}:latest
+  workflow_call:
+    inputs:
+      qcow2_path:
+        description: Path to QCOW2 to publish
+        required: true
+        type: string
+        default: dist/image.qcow2
+      artifact_name:
+        description: Optional name of a previously uploaded artifact containing the QCOW2
+        required: false
+        type: string
+        default: ""
+      image_ref:
+        description: Full GHCR ref (ghcr.io/OWNER/REPO:TAG)
+        required: true
+        type: string
+        default: ghcr.io/${{ github.repository }}:latest
 
 jobs:
   publish:
