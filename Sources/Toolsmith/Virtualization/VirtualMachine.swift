@@ -8,9 +8,9 @@ public protocol VirtualMachineManaging: AnyObject, Sendable {
   func shutdown() async
 }
 
-public extension VirtualMachineManaging {
+extension VirtualMachineManaging {
   @discardableResult
-  func start() async throws -> any CommandChannel {
+  public func start() async throws -> any CommandChannel {
     try await start(writableExports: [])
   }
 }

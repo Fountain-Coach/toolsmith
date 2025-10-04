@@ -5,7 +5,7 @@ import ToolsmithSupport
   import FoundationNetworking
 #endif
 
-public struct ImageHydrator: Sendable {
+public struct ImageHydrator: @unchecked Sendable {
   private let manifest: ToolManifest
   private let manifestURL: URL
   private let session: URLSession
