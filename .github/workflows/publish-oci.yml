@@ -1,0 +1,52 @@
+name: Publish OCI Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      qcow2_path:
+        description: Path to QCOW2 to publish
+        required: true
+        default: dist/image.qcow2
+      image_ref:
+        description: Full GHCR ref (ghcr.io/OWNER/REPO:TAG)
+        required: true
+        default: ghcr.io/${{ github.repository }}:latest
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup ORAS CLI
+        uses: oras-project/setup-oras@v1
+        with:
+          # NOTE: setup-oras expects the version WITHOUT the leading 'v'
+          version: 1.3.0
+
+      - name: Verify ORAS
+        run: oras version
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push QCOW2 to GHCR
+        env:
+          QCOW2_PATH: ${{ inputs.qcow2_path }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$QCOW2_PATH" ]]; then
+            echo "QCOW2 not found at $QCOW2_PATH" >&2
+            exit 1
+          fi
+          fname=$(basename "$QCOW2_PATH")
+          oras push "$IMAGE_REF" \
+            "$QCOW2_PATH:application/vnd.fountain.toolsmith.qcow2" \
+            --annotation org.opencontainers.image.title="$fname" \
+            --artifact-type application/vnd.fountain.toolsmith.qcow2
+
