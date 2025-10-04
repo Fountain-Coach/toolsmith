@@ -58,5 +58,4 @@ jobs:
         uses: ./.github/workflows/publish-oci.yml
         with:
           qcow2_path: ${{ steps.build.outputs.qcow2_path }}
-          image_ref: ghcr.io/${{ github.repository }}:${{ inputs.image_tag || format('ci-{0}', github.run_id) }}
-
+          image_ref: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
