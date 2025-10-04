@@ -56,3 +56,15 @@ What Toolsmith does:
 - `Unauthorized`/`Forbidden`: verify `GHCR_TOKEN` scope (`read:packages`) and username/actor.
 - `No .qcow2 payload found`: ensure you pushed the QCOW2 file as a layer and used a `.qcow2` filename.
 
+## GitHub Actions Workflow
+
+This repository includes a reusable workflow to publish a QCOW2 to GHCR and verify availability by polling with `oras pull`:
+
+- File: `.github/workflows/publish-oci.yml`
+- Triggers: `workflow_dispatch` and `workflow_call`
+- Inputs:
+  - `qcow2_path` (default `dist/image.qcow2`)
+  - `artifact_name` (optional; download a prior build artifact into `dist/`)
+  - `image_ref` (default `ghcr.io/<owner>/<repo>:latest`)
+
+The workflow pins `oras-project/setup-oras@v1` to `version: 1.3.0` (note: without the leading `v`). After pushing, it polls GHCR by running `oras pull` until a `.qcow2` is available, and writes details to the job summary.
