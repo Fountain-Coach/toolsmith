@@ -54,8 +54,71 @@ jobs:
           QCOW2=$(ls -1 dist/*.qcow2 | head -n1)
           echo "qcow2_path=${QCOW2}" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to GHCR using reusable workflow
-        uses: ./.github/workflows/publish-oci.yml
+      - name: Setup ORAS CLI
+        uses: oras-project/setup-oras@v1
         with:
-          qcow2_path: ${{ steps.build.outputs.qcow2_path }}
-          image_ref: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
+          version: 1.3.0
+
+      - name: Verify ORAS
+        run: oras version
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push QCOW2 to GHCR
+        env:
+          QCOW2_PATH: ${{ steps.build.outputs.qcow2_path }}
+          IMAGE_REF: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$QCOW2_PATH" ]]; then
+            echo "QCOW2 not found at $QCOW2_PATH" >&2
+            exit 1
+          fi
+          echo "Computing SHA256 of $QCOW2_PATH"
+          ORIG_SHA=$(sha256sum "$QCOW2_PATH" | awk '{print $1}')
+          echo "Artifact: $QCOW2_PATH" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA256: $ORIG_SHA" >> "$GITHUB_STEP_SUMMARY"
+          fname=$(basename "$QCOW2_PATH")
+          oras push "$IMAGE_REF" \
+            "$QCOW2_PATH:application/vnd.fountain.toolsmith.qcow2" \
+            --annotation org.opencontainers.image.title="$fname" \
+            --artifact-type application/vnd.fountain.toolsmith.qcow2
+
+      - name: Poll and verify artifact availability
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Re-login to GHCR for pull verification"
+          echo "$GITHUB_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          tmpdir=$(mktemp -d)
+          attempts=40
+          sleep_secs=6
+          ok=0
+          echo "Polling GHCR for availability: $IMAGE_REF (max $attempts attempts)"
+          for i in $(seq 1 $attempts); do
+            rm -rf "$tmpdir"/* || true
+            if (cd "$tmpdir" && oras pull "$IMAGE_REF" >/dev/null 2>&1); then
+              if compgen -G "$tmpdir/*.qcow2" > /dev/null; then
+                pulled=$(ls -1 "$tmpdir"/*.qcow2 | head -n1)
+                PULLED_SHA=$(sha256sum "$pulled" | awk '{print $1}')
+                echo "Pulled: $pulled"
+                echo "Pulled SHA256: $PULLED_SHA"
+                echo "Pulled file: $pulled" >> "$GITHUB_STEP_SUMMARY"
+                echo "Pulled SHA256: $PULLED_SHA" >> "$GITHUB_STEP_SUMMARY"
+                ok=1
+                break
+              fi
+            fi
+            echo "Attempt $i/$attempts: not available yet; sleeping ${sleep_secs}s..."
+            sleep "$sleep_secs"
+          done
+          if [[ "$ok" != "1" ]]; then
+            echo "Verification failed: artifact not available or missing .qcow2 payload" >&2
+            exit 1
+          fi
