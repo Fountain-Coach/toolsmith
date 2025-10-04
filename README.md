@@ -84,6 +84,26 @@ signals. By default the workspace is mounted read-only; if a tool needs
 to export artifacts you can opt into writable mounts via the adapters in
 `Sources/Toolsmith/Adapters/`.
 
+### Distributing the VM image via GHCR (OCI)
+
+You can publish the QCOW2 as an OCI artifact on GitHub Container Registry (GHCR) and let Toolsmith hydrate it with the `oras` CLI:
+
+- Publish
+  - Compute the digest of the final QCOW2: `sha256sum image.qcow2`
+  - Push with ORAS (example):
+    - `oras login ghcr.io -u $GITHUB_ACTOR -p $GHCR_TOKEN`
+    - `oras push ghcr.io/OWNER/REPO:VERSION image.qcow2:application/vnd.fountain.toolsmith.qcow2 \
+        --annotation org.opencontainers.image.title=image.qcow2 \
+        --artifact-type application/vnd.fountain.toolsmith.qcow2`
+  - Record the digest in your `.toolsmith/tools.json` as `image.qcow2_sha256`.
+
+- Consume
+  - Set `image.qcow2` in the manifest to `oci://ghcr.io/OWNER/REPO:VERSION` and `image.qcow2_sha256` to the QCOW2 SHA-256.
+  - Ensure `oras` is installed and on PATH (or set `TOOLSMITH_ORAS` to its path).
+  - For private artifacts, set `GHCR_USERNAME` and `GHCR_TOKEN` (or `GITHUB_ACTOR` + `GHCR_TOKEN`).
+
+Toolsmith detects the `oci://` scheme and runs `oras pull` under the hood, then verifies the file’s SHA‑256 before booting the VM.
+
 ### Overriding execution placement
 
 You can switch between host and VM execution without code changes by
